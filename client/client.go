@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -54,5 +55,10 @@ func main() {
 		fmt.Printf("Erro ao fazer parse do retorno: %v\n", err)
 	}
 
-	fmt.Printf("Cotação atual do Dolar: %s\n", cotacao.Bid)
+	err = os.WriteFile("cotacao.txt", []byte(fmt.Sprintf("Dólar: %s", cotacao.Bid)), 0644)
+	if err != nil {
+		fmt.Printf("Erro ao criar/atualizar arquivo cotacao.txt: %v\n", err)
+	}
+
+	fmt.Printf("Arquivo atualizado, cotação atual: Dolar: %s\n", cotacao.Bid)
 }
