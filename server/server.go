@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type Dolar struct {
@@ -29,29 +33,61 @@ type Cotacao struct {
 }
 
 func main() {
+	db, err := sql.Open("sqlite", "./meubanco.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Cria a tabela se não existir
+	createTable := `
+	CREATE TABLE IF NOT EXISTS cotacoes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		cotacao TEXT NOT NULL
+	);`
+
+	if _, err := db.Exec(createTable); err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/cotacao", getCotacaoHandler)
+	mux.HandleFunc("/cotacao", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+			return
+		}
+
+		bid, err := buscarCotacao()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err = salvarCotacao(db, bid)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		response, _ := json.Marshal(map[string]interface{}{
+			"bid": bid})
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(response)
+
+	})
 	http.ListenAndServe(":8080", mux)
 }
 
-func getCotacaoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
-		return
-	}
+func salvarCotacao(db *sql.DB, bid string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
 
-	bid, err := buscarCotacao()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	query := `INSERT INTO cotacoes (cotacao) VALUES (?)`
 
-	response, _ := json.Marshal(map[string]interface{}{
-		"bid": bid})
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(response)
+	_, err := db.ExecContext(ctx, query, bid)
+	return err
 }
 
 func buscarCotacao() (string, error) {
